@@ -3,6 +3,7 @@
 Usage:
   main.py [run]
   main.py initdb
+  main.py updatecomplete
 """
 from docopt import docopt
 import subprocess
@@ -18,7 +19,7 @@ def _run_sql(filename):
             stderr=subprocess.STDOUT,
             shell=True
         )
-    except subprocess.CalledProcessError, ex:
+    except subprocess.CalledProcessError as ex:
         print ex.output
         os.exit(1)
 
@@ -29,5 +30,7 @@ if __name__ == '__main__':
         _run_sql('resources/database.sql')
         _run_sql('resources/fixtures.sql')
         print "AlayaTodo: Database initialized."
+    elif args['updatecomplete']:
+        _run_sql('resources/addCompleted.sql')
     else:
         app.run(use_reloader=True)
