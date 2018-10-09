@@ -5,7 +5,8 @@ from flask import (
     render_template,
     request,
     session
-    )
+)
+import json
 
 
 @app.route('/')
@@ -25,7 +26,7 @@ def login_POST():
     username = request.form.get('username')
     password = request.form.get('password')
 
-    sql = "SELECT * FROM users WHERE username = '%s' AND password = '%s'";
+    sql = "SELECT * FROM users WHERE username = '%s' AND password = '%s'" ;
     cur = g.db.execute(sql % (username, password))
     user = cur.fetchone()
     if user:
@@ -95,3 +96,15 @@ def todo_complete(id):
 
     g.db.commit()
     return redirect('/todo')
+
+
+@app.route('/todo/<id>/json', methods=['POST'])
+def todo_exportjson(id):
+    cur = g.db.execute("SELECT * FROM todos WHERE id ='%s'" % id)
+    todo = cur.fetchone()
+    with open("data_file.json", "w") as outfile:
+        json.dump({'id':todo['id'], 'description':todo['description']}, outfile)
+
+    return redirect('/todo')
+
+
