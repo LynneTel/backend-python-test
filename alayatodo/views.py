@@ -4,7 +4,8 @@ from flask import (
     redirect,
     render_template,
     request,
-    session
+    session,
+    flash
 )
 import json
 
@@ -64,22 +65,35 @@ def todos():
 @app.route('/todo', methods=['POST'])
 @app.route('/todo/', methods=['POST'])
 def todos_POST():
+    error = None
     if not session.get('logged_in'):
         return redirect('/login')
-    g.db.execute(
-        "INSERT INTO todos (user_id, description) VALUES ('%s', '%s')"
-        % (session['user']['id'], request.form.get('description', ''))
-    )
-    g.db.commit()
+
+    try:
+        g.db.execute(
+            "INSERT INTO todos (user_id, description) VALUES ('%s', '%s')"
+            % (session['user']['id'], request.form.get('description', ''))
+            )
+        g.db.commit()
+        error = "Insert successful!"
+    except sqlite3.IntegrityError:
+        error = "Unable to insert!"
+    flash(error)
     return redirect('/todo')
 
 
 @app.route('/todo/<id>', methods=['POST'])
 def todo_delete(id):
+	error = None
     if not session.get('logged_in'):
         return redirect('/login')
-    g.db.execute("DELETE FROM todos WHERE id ='%s'" % id)
-    g.db.commit()
+    try:
+        g.db.execute("DELETE FROM todos WHERE id ='%s'" % id)
+        g.db.commit()
+        error = "Delete successful!"
+    except sqlite3.IntegrityError:
+        error = "Unable to delete!"
+    flash(error)
     return redirect('/todo')
 
 
