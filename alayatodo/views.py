@@ -8,6 +8,7 @@ from flask import (
     flash
 )
 import json
+from flask_paginate import Pagination, get_page_args
 
 
 @app.route('/')
@@ -52,14 +53,34 @@ def todo(id):
     return render_template('todo.html', todo=todo)
 
 
-@app.route('/todo', methods=['GET'])
-@app.route('/todo/', methods=['GET'])
-def todos():
+@app.route('/todo', defaults={'page':1}, methods=['GET'])
+@app.route('/todo/', defaults={'page':1}, methods=['GET'])
+@app.route('/todo/page/<int:page>', methods=['GET'])
+@app.route('/todo/page/<int:page>/', methods=['GET'])
+def todos(page):
     if not session.get('logged_in'):
         return redirect('/login')
-    cur = g.db.execute("SELECT * FROM todos")
+    cur = g.db.execute("SELECT Count(*) FROM todos")
+    total = cur.fetchone()[0]
+    page, per_page, offset = get_page_args(page_parameter='page', per_page_parameter='per_page')
+
+    sql = "SELECT * FROM todos limit {}, {}".format(offset, per_page)
+    cur = g.db.execute(sql)
     todos = cur.fetchall()
-    return render_template('todos.html', todos=todos)
+
+    pagination = Pagination(page=page,
+                            per_page=per_page,
+                            total=total,
+                            record_name='todos',
+                            format_total=True,
+                            format_number=True,
+                            css_framework='foundation'
+                            )
+
+    return render_template('todos.html', todos=todos,
+                           page=page,
+                           per_page=per_page,
+                           pagination=pagination, )
 
 
 @app.route('/todo', methods=['POST'])
@@ -73,7 +94,7 @@ def todos_POST():
         g.db.execute(
             "INSERT INTO todos (user_id, description) VALUES ('%s', '%s')"
             % (session['user']['id'], request.form.get('description', ''))
-            )
+        	)
         g.db.commit()
         error = "Insert successful!"
     except sqlite3.IntegrityError:
@@ -84,7 +105,7 @@ def todos_POST():
 
 @app.route('/todo/<id>', methods=['POST'])
 def todo_delete(id):
-	error = None
+    error = None
     if not session.get('logged_in'):
         return redirect('/login')
     try:
@@ -120,5 +141,3 @@ def todo_exportjson(id):
         json.dump({'id':todo['id'], 'description':todo['description']}, outfile)
 
     return redirect('/todo')
-
-
