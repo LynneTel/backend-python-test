@@ -1,4 +1,4 @@
-from alayatodo import app
+from alayatodo import app, db
 from flask import (
     g,
     redirect,
@@ -8,7 +8,10 @@ from flask import (
     flash
 )
 import json
-from flask_paginate import Pagination, get_page_args
+from flask_paginate import Pagination, get_page_args, get_page_parameter
+from alayatodo.models import User, Todo, object_as_dict
+from sqlalchemy import exc
+import re
 
 
 @app.route('/')
@@ -28,11 +31,9 @@ def login_POST():
     username = request.form.get('username')
     password = request.form.get('password')
 
-    sql = "SELECT * FROM users WHERE username = '%s' AND password = '%s'" ;
-    cur = g.db.execute(sql % (username, password))
-    user = cur.fetchone()
+    user = object_as_dict(User.query.filter_by(username=username).filter_by(password=password).first())
     if user:
-        session['user'] = dict(user)
+        session['user'] = user
         session['logged_in'] = True
         return redirect('/todo')
 
@@ -48,8 +49,8 @@ def logout():
 
 @app.route('/todo/<id>', methods=['GET'])
 def todo(id):
-    cur = g.db.execute("SELECT * FROM todos WHERE id ='%s'" % id)
-    todo = cur.fetchone()
+    todo = Todo.query.filter_by(id=id).first()
+
     return render_template('todo.html', todo=todo)
 
 
@@ -60,13 +61,10 @@ def todo(id):
 def todos(page):
     if not session.get('logged_in'):
         return redirect('/login')
-    cur = g.db.execute("SELECT Count(*) FROM todos")
-    total = cur.fetchone()[0]
+    total = Todo.query.count()
     page, per_page, offset = get_page_args(page_parameter='page', per_page_parameter='per_page')
 
-    sql = "SELECT * FROM todos limit {}, {}".format(offset, per_page)
-    cur = g.db.execute(sql)
-    todos = cur.fetchall()
+    todos = Todo.query.limit(per_page).offset(offset).all()
 
     pagination = Pagination(page=page,
                             per_page=per_page,
@@ -80,64 +78,91 @@ def todos(page):
     return render_template('todos.html', todos=todos,
                            page=page,
                            per_page=per_page,
-                           pagination=pagination, )
+                           pagination=pagination)
 
 
 @app.route('/todo', methods=['POST'])
 @app.route('/todo/', methods=['POST'])
 def todos_POST():
     error = None
+    url = ''
+    r = request
+    base_url = r.base_url
+    referrer = r.referrer
+
+    url = re.sub(base_url, '', referrer)
+
     if not session.get('logged_in'):
         return redirect('/login')
-
     try:
-        g.db.execute(
-            "INSERT INTO todos (user_id, description) VALUES ('%s', '%s')"
-            % (session['user']['id'], request.form.get('description', ''))
-        	)
-        g.db.commit()
+        userid = session['user']['id']
+        descr = request.form.get('description', '')
+
+        mytodo = Todo(userid, descr, 0)
+        db.session.add(mytodo)
+        db.session.commit()
         error = "Insert successful!"
-    except sqlite3.IntegrityError:
+    except exc.SQLAlchemyError:
+        print 'sql error'
         error = "Unable to insert!"
     flash(error)
-    return redirect('/todo')
+    return redirect('/todo/'+url)
 
 
 @app.route('/todo/<id>', methods=['POST'])
 def todo_delete(id):
     error = None
+    url = ''
+    r = request
+    referrer = r.referrer
+
+    pos = referrer.find('page')
+    url = referrer[pos::]
+
     if not session.get('logged_in'):
         return redirect('/login')
     try:
-        g.db.execute("DELETE FROM todos WHERE id ='%s'" % id)
-        g.db.commit()
+        mytodo = Todo.query.filter_by(id=id).first()
+        db.session.delete(mytodo)
+        db.session.commit()
         error = "Delete successful!"
     except sqlite3.IntegrityError:
         error = "Unable to delete!"
     flash(error)
-    return redirect('/todo')
+    return redirect('/todo/' + url)
 
 
 @app.route('/markcomplete/<id>', methods=['POST'])
 def todo_complete(id):
+    url = ''
+    r = request
+    referrer = r.referrer
+
+    pos = referrer.find('page')
+    url = referrer[pos::]
+
     if not session.get('logged_in'):
         return redirect('/login')
-    cur = g.db.execute("SELECT * FROM todos WHERE id ='%s'" % id)
-    todo = cur.fetchone()
-    if todo['completed'] == 0:
-        g.db.execute("UPDATE todos SET completed=1 WHERE id ='%s'" % id)
+    mytodo = Todo.query.filter_by(id=id).first()
+    if mytodo.completed == 1:
+        mytodo.completed = 0
     else:
-        g.db.execute("UPDATE todos SET completed=0 WHERE id ='%s'" % id)
-
-    g.db.commit()
-    return redirect('/todo')
+        mytodo.completed = 1
+    db.session.commit()
+    return redirect('/todo/' + url)
 
 
 @app.route('/todo/<id>/json', methods=['POST'])
 def todo_exportjson(id):
-    cur = g.db.execute("SELECT * FROM todos WHERE id ='%s'" % id)
-    todo = cur.fetchone()
-    with open("data_file.json", "w") as outfile:
-        json.dump({'id':todo['id'], 'description':todo['description']}, outfile)
+    url = ''
+    r = request
+    referrer = r.referrer
 
-    return redirect('/todo')
+    pos = referrer.find('page')
+    url = referrer[pos::]
+
+    mytodo = Todo.query.filter_by(id=id).first()
+    with open("data_file.json", "w") as outfile:
+        json.dump({'id':mytodo.id, 'description':mytodo.description}, outfile)
+
+    return redirect('/todo/' + url)
